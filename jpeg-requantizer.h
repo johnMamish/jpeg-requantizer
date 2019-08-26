@@ -1,6 +1,8 @@
 #ifndef JPEG_REQUANTIZER_H
 #define JPEG_REQUANTIZER_H
 
+#include "jpeg.h"
+
 /**
  *
  * rois should have the same dimensions as the image stored in jpg.
