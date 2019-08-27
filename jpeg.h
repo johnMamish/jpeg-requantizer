@@ -79,6 +79,7 @@ typedef struct frame_component_specification_parameters
     uint8_t component_identifier;
     uint8_t horizontal_sampling_factor;
     uint8_t vertical_sampling_factor;
+    uint8_t quantization_table_selector;
 } frame_component_specification_parameters_t;
 
 typedef struct jpeg_scan_header

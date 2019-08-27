@@ -224,8 +224,9 @@ static int decode_frame_header(uint8_t marker, FILE* fp, jpeg_frame_header_t* de
     dest->csps = calloc(dest->number_of_image_components, sizeof(*dest->csps));
     for (int i = 0; i < dest->number_of_image_components; i++) {
         dest->csps[i].component_identifier = buf[6 + (3 * i)];
-        dest->csps[i].horizontal_sampling_factor = buf[7 + (3 * i)];
-        dest->csps[i].vertical_sampling_factor = buf[8 + (3 * i)];
+        dest->csps[i].horizontal_sampling_factor = buf[7 + (3 * i)] >> 4;
+        dest->csps[i].vertical_sampling_factor = buf[7 + (3 * i)] & 0x0f;
+        dest->csps[i].quantization_table_selector = buf[8 + (3 * i)];
     }
 
     free(buf);
