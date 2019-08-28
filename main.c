@@ -6,10 +6,77 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "jpeg.h"
 #include "jpeg-requantizer.h"
 #include "bit_dispenser.h"
+
+static void print_block(jpeg_block_t* block)
+{
+    printf("DCT Matrix=");
+
+    printf("[  DC ");
+    int acidx = 0;
+    for (int i = 0; i < 7; i++) {
+        printf(" %5d", block->ac_values[acidx]);
+        acidx++;
+    }
+    printf("]\n");
+
+    for (int i = 0; i < 7; i++) {
+        printf("           [");
+        for (int j = 0; j < 8; j++) {
+            printf("%5d ", block->ac_values[acidx]);
+            acidx++;
+        }
+        printf("\b]\n");
+    }
+}
+
+static void print_block_unzigged(jpeg_block_t* block)
+{
+    jpeg_block_t* unzigged = calloc(1, sizeof(jpeg_block_t));
+
+    // zigzag starts on [1, 0] and moves in the downwards direction
+    int zigdir = -1;
+    int zig_x = 1;
+    int zig_y = 0;
+    for (int i = 0; i < 63; i++) {
+        // copy data over
+        int zigidx = (zig_x + (8 * zig_y)) - 1;
+        unzigged->ac_values[zigidx] = block->ac_values[i];
+//        printf("zigidx = %3i, i = %3i, zig_x = %2i, zig_y = %2i, zigdir = %2i\n",
+//               zigidx, i, zig_x, zig_y, zigdir);
+
+        // update zig coordinates
+        // check and see if moving in the zig direction would put us out of bounds
+        int nx = zig_x + zigdir;
+        int ny = zig_y - zigdir;
+        if ((nx < 0) && (ny > 7)) {
+            zig_x++;
+            zigdir = -zigdir;
+        } else if ((nx < 0) && (zigdir == -1)) {
+            zig_y++;
+            zigdir = -zigdir;
+        } else if ((ny < 0) && (zigdir == 1)) {
+            zig_x++;
+            zigdir = -zigdir;
+        } else if ((nx > 7) && (zigdir == 1)) {
+            zig_y++;
+            zigdir = -zigdir;
+        } else if ((ny > 7) && (zigdir == -1)) {
+            zig_x++;
+            zigdir = -zigdir;
+        } else {
+            zig_x = nx;
+            zig_y = ny;
+        }
+    }
+
+    print_block(unzigged);
+    free(unzigged);
+}
 
 int main(int argc, char** argv)
 {
@@ -28,6 +95,27 @@ int main(int argc, char** argv)
     if (huffman_decoded_jpeg == NULL) {
         printf("error during huffman decoding\n");
         return -1;
+    }
+
+    // print
+    for (int MCU = 0; MCU < 10; MCU++) {
+        for (int component = 0; component < 3; component++) {
+            const int MCUs_per_line   = ((jpeg->frame_header.csps[component].horizontal_sampling_factor *
+                                          jpeg->frame_header.samples_per_line) /
+                                         huffman_decoded_jpeg->H_max);
+
+            const int MCU_x = MCU % MCUs_per_line;
+            const int MCU_y = MCU / MCUs_per_line;
+            const int blocks_per_mcu =
+                (jpeg->frame_header.csps[component].horizontal_sampling_factor *
+                 jpeg->frame_header.csps[component].vertical_sampling_factor);
+            const int block_idx = blocks_per_mcu * MCU;
+            for (int block = 0; block < blocks_per_mcu; block++) {
+                printf("Component = %i, MCU = [%i,%i]\n", component, MCU_x, MCU_y);
+                print_block_unzigged(&huffman_decoded_jpeg->components[component].blocks[block_idx + block]);
+                printf("\n\n");
+            }
+        }
     }
 
     // clean up

@@ -543,9 +543,16 @@ huffman_decoded_jpeg_scan_t* jpeg_image_huffman_decode(const jpeg_image_t* jpeg)
     //
     bit_dispenser_t* bd = bit_dispenser_create(jpeg->scan.entropy_coded_segments[0]->data,
                                                jpeg->scan.entropy_coded_segments[0]->size);
-    uint16_t huff_reg = 0;
 
-    int num_mcus = result->H_max * result->V_max;
+    // num of MCUs is the min of the number of blocks
+    int num_mcus = result->components[0].num_blocks;
+    for (int i = 1; i < jpeg->frame_header.num_components; i++) {
+        if (result->components[i].num_blocks < num_mcus) {
+            num_mcus = result->components[i].num_blocks;
+        }
+    }
+    printf("jpeg decoding trace:    %i MCUs in image.\n", num_mcus);
+
     for (int i = 0; i < num_mcus; i++) {
         printf("jpeg decoding trace:    decoding MCU %i.\n", i);
         for (int j = 0; j < jpeg->frame_header.num_components; j++) {
@@ -599,6 +606,7 @@ huffman_decoded_jpeg_scan_t* jpeg_image_huffman_decode(const jpeg_image_t* jpeg)
                         goto fail_cleanup;
                     }
                     uint8_t rrrrssss = (uint8_t)ac_huffman_decode;
+                    printf("jpeg decoding trace:    rrrrssss = %02x.\n", rrrrssss);
 
                     // special EOB case
                     if (rrrrssss == 0x00) {
@@ -624,7 +632,9 @@ huffman_decoded_jpeg_scan_t* jpeg_image_huffman_decode(const jpeg_image_t* jpeg)
                     target_block->ac_values[ac_values_decoded] = ac_val;
                     printf("jpeg decoding trace:    Value %04x (length %i) decoded to %i.\n",
                            ac_raw_value, ac_coefficient_len, ac_val);
+                    ac_values_decoded += 1;
                 }
+                printf("jpeg decoding trace:    ========================================\n");
             }
         }
     }
