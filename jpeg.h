@@ -118,9 +118,9 @@ typedef struct jpeg_frame_header
     uint16_t samples_per_line;
 
     // Expected to be 3 or 1; one for each color.
-    uint8_t  number_of_image_components;
+    uint8_t  num_components;
 
-    // The number of component specification parameters is equal to "number_of_image_components".
+    // The number of component specification parameters is equal to "num_components".
     frame_component_specification_parameters_t* csps;
 } jpeg_frame_header_t;
 
@@ -147,6 +147,27 @@ typedef struct jpeg_image
     jpeg_scan_t scan;
 } jpeg_image_t;
 
+
+typedef struct jpeg_block
+{
+    uint16_t dc_value;
+    uint16_t ac_values[63];
+} jpeg_block_t;
+
+typedef struct huffman_decoded_jpeg_component
+{
+    uint32_t num_blocks;
+    jpeg_block_t* blocks;
+} huffman_decoded_jpeg_component_t;
+
+typedef struct huffman_decoded_jpeg_scan
+{
+    huffman_decoded_jpeg_component_t components[3];
+
+    int H_max;
+    int V_max;
+} huffman_decoded_jpeg_scan_t;
+
 /**
  * Given a file path, decodes the jpeg's parts into a newly allocated jpeg_t struct.
  *
@@ -156,6 +177,14 @@ typedef struct jpeg_image
  */
 jpeg_image_t* jpeg_image_load_from_file(const char* file);
 
+
+/**
+ * Given a loaded jpeg_image_t, this undoes huffman, RLE, and DPCT coding on the AC and DC
+ * components of the loaded jpeg, dumping the result into a newly allocated struct.
+ */
+huffman_decoded_jpeg_scan_t* jpeg_image_huffman_decode(const jpeg_image_t* jpeg);
+
 void jpeg_image_destroy(jpeg_image_t* jpeg_image);
 
+void huffman_decoded_jpeg_scan_destroy(huffman_decoded_jpeg_scan_t* decoded_scan);
 #endif

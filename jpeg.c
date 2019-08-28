@@ -219,10 +219,10 @@ static int decode_frame_header(uint8_t marker, FILE* fp, jpeg_frame_header_t* de
     dest->sample_precision = buf[0];
     dest->number_of_lines = (buf[1] << 8) | buf[2];
     dest->samples_per_line = (buf[3] << 8) | buf[4];
-    dest->number_of_image_components = buf[5];
+    dest->num_components = buf[5];
 
-    dest->csps = calloc(dest->number_of_image_components, sizeof(*dest->csps));
-    for (int i = 0; i < dest->number_of_image_components; i++) {
+    dest->csps = calloc(dest->num_components, sizeof(*dest->csps));
+    for (int i = 0; i < dest->num_components; i++) {
         dest->csps[i].component_identifier = buf[6 + (3 * i)];
         dest->csps[i].horizontal_sampling_factor = buf[7 + (3 * i)] >> 4;
         dest->csps[i].vertical_sampling_factor = buf[7 + (3 * i)] & 0x0f;
@@ -425,6 +425,129 @@ cleanup_on_fail:
     return NULL;
 }
 
+/**
+ * Allocates a new huffman_decoded_jpeg_scan_t with appropriately sized mcu tables given the width,
+ * height, and sampling factors of the given jpeg.
+ */
+static huffman_decoded_jpeg_scan_t* huffman_decoded_jpeg_scan_create(const jpeg_image_t* jpeg)
+{
+    // check and make sure that the number of components is compliant with our system
+    if ((jpeg->frame_header.num_components != 3) &&
+        (jpeg->frame_header.num_components != 1)) {
+        return NULL;
+    }
+
+    huffman_decoded_jpeg_scan_t* result = calloc(1, sizeof(huffman_decoded_jpeg_scan_t));
+
+    for (int i = 0; i < jpeg->frame_header.num_components; i++) {
+        if (jpeg->frame_header.csps[i].horizontal_sampling_factor > result->H_max) {
+            result->H_max = jpeg->frame_header.csps[i].horizontal_sampling_factor;
+        }
+        if (jpeg->frame_header.csps[i].vertical_sampling_factor > result->V_max) {
+            result->V_max = jpeg->frame_header.csps[i].vertical_sampling_factor;
+        }
+    }
+
+    for (int i = 0; i < jpeg->frame_header.num_components; i++) {
+        // NB: this handles the ceiling operation
+        const int component_x = (jpeg->frame_header.csps[i].horizontal_sampling_factor *
+                                 jpeg->frame_header.samples_per_line) / result->H_max;
+        const int component_y = (jpeg->frame_header.csps[i].vertical_sampling_factor *
+                                 jpeg->frame_header.number_of_lines) / result->V_max;
+
+        // calculate number of BLOCKs
+        const int blocks_x   = (component_x + (8 - 1)) / 8;
+        const int blocks_y   = (component_y + (8 - 1)) / 8;
+        result->components[i].num_blocks = blocks_x * blocks_y;
+        result->components[i].blocks     = calloc(result->components[i].num_blocks,
+                                                  sizeof(jpeg_block_t));
+    }
+
+    return result;
+}
+
+
+/**
+ * NB: this assumes that components are in the same order in the scan as they are in the
+ * frame header, which is probably true most of the time.
+ */
+huffman_decoded_jpeg_scan_t* jpeg_image_huffman_decode(const jpeg_image_t* jpeg)
+{
+    // allocate new structure
+    huffman_decoded_jpeg_scan_t* result = huffman_decoded_jpeg_scan_create(jpeg);
+
+    //
+    int bitshift_bitmask = 0x80;
+    int bitshift_data_idx = 0;
+    uint16_t huff_reg = 0;
+
+    int num_mcus = result->H_max * result->V_max;
+    for (int i = 0; i < num_mcus; i++) {
+        for (int j = 0; j < jpeg->frame_header.num_components; j++) {
+            int blocks_per_mcu = (jpeg->frame_header.csps[i].horizontal_sampling_factor *
+                                  jpeg->frame_header.csps[i].vertical_sampling_factor);
+            int block_idx      = blocks_per_mcu * i;
+
+            uint8_t* data = jpeg->scan.entropy_coded_segments[0]->data;
+
+            // TODO find right value for '?'
+            // jpeg_huffman_table_t* huff_table = &(jpeg->dc_huffman_tables[?]);
+            const jpeg_huffman_table_t* huff_table = &(jpeg->dc_huffman_tables[0]);
+
+            // huffman decode!
+            for (int k = 0; k < blocks_per_mcu; k++) {
+                // dc block decode
+                huff_reg = 0;
+                int bits_shifted = 0;
+                uint16_t min_exempt_value = 0;
+                uint16_t cumsum = 0;
+                int dc_huffman_decode = -1;
+
+                while ((bits_shifted < 16) && (dc_huffman_decode == -1)) {
+                    // shift in new bit.
+                    huff_reg <<= 1;
+                    if (data[bitshift_data_idx] & bitshift_bitmask) {
+                        huff_reg |= 0x01;
+                    }
+                    bitshift_bitmask >>= 1;
+                    if (bitshift_bitmask == 0) {
+                        bitshift_bitmask = 0x80;
+                    }
+
+                    // update tree tracking
+                    min_exempt_value <<= 1;
+                    min_exempt_value += huff_table->number_of_codes_with_length[bits_shifted];
+                    bits_shifted++;
+
+                    cumsum += huff_table->number_of_codes_with_length[bits_shifted];
+
+                    // check
+                    if (huff_reg < min_exempt_value) {
+                        int dist_from_end = min_exempt_value - huff_reg;
+                        dc_huffman_decode = huff_table->huffman_codes[cumsum - dist_from_end];
+                    }
+                }
+
+                if (dc_huffman_decode == -1) {
+                    printf("jpeg decoding error:    error decoding DC huffman value.\n");
+                    goto fail_cleanup;
+                }
+
+                //uint16_t foo;
+
+                // ac block decode
+
+            }
+        }
+    }
+
+    return result;
+
+fail_cleanup:
+    huffman_decoded_jpeg_scan_destroy(result);
+    return NULL;
+}
+
 void jpeg_image_destroy(jpeg_image_t* jpeg)
 {
     for (int i = 0; i < jpeg->num_misc_segments; i++) {
@@ -438,5 +561,12 @@ void jpeg_image_destroy(jpeg_image_t* jpeg)
     free(jpeg);
 }
 
+void huffman_decoded_jpeg_scan_destroy(huffman_decoded_jpeg_scan_t* decoded_scan)
+{
+    for (int i = 0; i < 3; i++) {
+        free(decoded_scan->components[i].blocks);
+    }
+    free(decoded_scan);
+}
 
 //static void parse_marker
