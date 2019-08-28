@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "bit_dispenser.h"
+#include "bit_packer.h"
 #include "jpeg.h"
 
 ////////////////////////////////////////////////////////////////
@@ -426,6 +427,45 @@ cleanup_on_fail:
     return NULL;
 }
 
+static jpeg_generic_segment_t* jpeg_generic_segment_copy(const jpeg_generic_segment_t* seg)
+{
+    jpeg_generic_segment_t* result = calloc(1, sizeof(jpeg_generic_segment_t));
+    result->header = seg->header;
+    result->data = malloc(seg->header.Ls - 2);
+    memcpy(result->data, seg->data, seg->header.Ls - 2);
+    return result;
+}
+
+jpeg_image_t* jpeg_image_copy(const jpeg_image_t* jpeg)
+{
+    jpeg_image_t* result = calloc(1, sizeof(jpeg_image_t));
+
+    // Start with a memcpy to copy all of the basic data. As a side effect, it will copy pointers
+    // which we later intend to deep-copy, but we can worry about that later.
+    memcpy(result, jpeg, sizeof(jpeg_image_t));
+
+    result->misc_segments = calloc(result->num_misc_segments, sizeof(*result->misc_segments));
+    for (int i = 0; i < jpeg->num_misc_segments; i++) {
+        result->misc_segments[i] = jpeg_generic_segment_copy(jpeg->misc_segments[i]);
+    }
+
+    // deep copy the frame header
+    result->frame_header.csps = calloc(result->frame_header.num_components,
+                                       sizeof(*result->frame_header.csps));
+    memcpy(result->frame_header.csps, jpeg->frame_header.csps,
+           jpeg->frame_header.num_components * sizeof(*result->frame_header.csps));
+
+    // scan header needs no deep copy, but the scan itself does.
+    // for the sake of laziness, we assume that there's only one entropy coded segment.
+    result->scan.entropy_coded_segments = calloc(1, sizeof(entropy_coded_segment_t*));
+    result->scan.entropy_coded_segments[0] = calloc(1, sizeof(entropy_coded_segment_t));
+    result->scan.entropy_coded_segments[0]->size = jpeg->scan.entropy_coded_segments[0]->size;
+    result->scan.entropy_coded_segments[0]->data = malloc(jpeg->scan.entropy_coded_segments[0]->size);
+    memcpy(result->scan.entropy_coded_segments[0]->data, jpeg->scan.entropy_coded_segments[0]->data,
+           jpeg->scan.entropy_coded_segments[0]->size);
+    return result;
+}
+
 /**
  * Allocates a new huffman_decoded_jpeg_scan_t with appropriately sized mcu tables given the width,
  * height, and sampling factors of the given jpeg.
@@ -645,6 +685,14 @@ fail_cleanup:
     huffman_decoded_jpeg_scan_destroy(result);
     bit_dispenser_destroy(bd);
     return NULL;
+}
+
+jpeg_image_t* jpeg_image_huffman_recode_with_tables(const huffman_decoded_jpeg_scan_t* decoded_scan,
+                                                    const jpeg_image_t* jpeg)
+{
+    jpeg_image_t* result = jpeg_image_copy(jpeg);
+
+
 }
 
 void jpeg_image_destroy(jpeg_image_t* jpeg)

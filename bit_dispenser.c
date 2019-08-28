@@ -85,7 +85,7 @@ void bit_dispenser_dispense_u32(uint32_t* target, int n, bit_dispenser_t* bd)
     }
 }
 
-bool bit_dispenser_empty(bit_dispenser_t* bd)
+bool bit_dispenser_empty(const bit_dispenser_t* bd)
 {
     return (bd->curidx == bd->datalen);
 }

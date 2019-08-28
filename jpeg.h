@@ -177,12 +177,25 @@ typedef struct huffman_decoded_jpeg_scan
  */
 jpeg_image_t* jpeg_image_load_from_file(const char* file);
 
+jpeg_image_t* jpeg_image_copy(const jpeg_image_t* jpeg);
 
 /**
  * Given a loaded jpeg_image_t, this undoes huffman, RLE, and DPCT coding on the AC and DC
  * components of the loaded jpeg, dumping the result into a newly allocated struct.
  */
 huffman_decoded_jpeg_scan_t* jpeg_image_huffman_decode(const jpeg_image_t* jpeg);
+
+/**
+ * Given a quantized, zigzagged huffman decoded jpeg scan and a jpeg_image_t containing coding
+ * information like horizontal and vertical sampling factor, produces a newly allocated jpeg_image_t
+ * with that information coded using the huffman tables provided in the jpeg_image_t.
+ *
+ * Of course, it's possible that the given huffman tables are incapable of coding either the new
+ * DC or AC components. In the DC case, recoding is aborted. In the AC case, an error is printed and
+ * that AC block is terminated prematurely with an EOB.
+ */
+jpeg_image_t* jpeg_image_huffman_recode_with_tables(const huffman_decoded_jpeg_scan_t* decoded_scan,
+                                                    const jpeg_image_t* jpeg);
 
 void jpeg_image_destroy(jpeg_image_t* jpeg_image);
 

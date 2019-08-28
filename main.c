@@ -11,6 +11,7 @@
 #include "jpeg.h"
 #include "jpeg-requantizer.h"
 #include "bit_dispenser.h"
+#include "bit_packer.h"
 
 static void print_block(jpeg_block_t* block)
 {
@@ -80,6 +81,26 @@ static void print_block_unzigged(jpeg_block_t* block)
 
 int main(int argc, char** argv)
 {
+#if 0
+    // bit packer test code
+    bit_packer_t* bp = bit_packer_create();
+
+    bit_packer_pack_u8(0b1111110, 7, bp);
+    bit_packer_pack_u16(0b0111111111, 10, bp);
+    bit_packer_pack_u8(0b1100, 4, bp);
+    bit_packer_pack_u8(0b01, 2, bp);
+    bit_packer_pack_u8(0b01, 2, bp);
+    bit_packer_fill_endbits(bp);
+
+    // print bit packer
+    for (int i = 0; i < bp->curidx; i++) {
+        printf("%02x ", bp->data[i]);
+    }
+    printf("\n");
+
+    bit_packer_destroy(bp);
+#endif
+
     if (argc != 2) {
         printf("needs an arg\n");
         return -1;
