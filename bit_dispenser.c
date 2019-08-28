@@ -23,6 +23,11 @@ bit_dispenser_t* bit_dispenser_create(const uint8_t* data, int datalen)
     return result;
 }
 
+void bit_dispenser_destroy(bit_dispenser_t* bd)
+{
+    free(bd);
+}
+
 /**
  *
  */

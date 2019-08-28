@@ -7,6 +7,7 @@
 typedef struct bit_dispenser bit_dispenser_t;
 
 bit_dispenser_t* bit_dispenser_create(const uint8_t* data, int datalen);
+void bit_dispenser_destroy(bit_dispenser_t* bd);
 
 /**
  * Consumes bits from the bit dispenser and right-shifts them into the given target.

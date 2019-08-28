@@ -150,8 +150,8 @@ typedef struct jpeg_image
 
 typedef struct jpeg_block
 {
-    uint16_t dc_value;
-    uint16_t ac_values[63];
+    int16_t dc_value;
+    int16_t ac_values[63];
 } jpeg_block_t;
 
 typedef struct huffman_decoded_jpeg_component

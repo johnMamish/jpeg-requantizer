@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "bit_dispenser.h"
 #include "jpeg.h"
 
 ////////////////////////////////////////////////////////////////
@@ -468,6 +469,69 @@ static huffman_decoded_jpeg_scan_t* huffman_decoded_jpeg_scan_create(const jpeg_
 
 
 /**
+ * The values coded into the file need to be converted as described in tables F.1 and F.2 of T.81.
+ */
+static int16_t coded_value_to_coefficient_value(uint16_t coded_value, int bitlen)
+{
+    int16_t result = 0;
+    if (bitlen == 0) {
+        return 0;
+    }
+
+    // "split" between negative and positive values happens depending on msb.
+    uint16_t msb = (coded_value & (1 << (bitlen - 1)));
+
+    // once we have the msb, we should delete it.
+    coded_value &= (1 << (bitlen - 1)) - 1;
+
+    if (msb) {
+        int16_t basis = (1 << (bitlen - 1));
+        result = basis + coded_value;
+    } else {
+        int16_t basis = 1 - (1 << bitlen);
+        result = basis + coded_value;
+    }
+
+    return result;
+}
+
+
+
+/**
+ * Valid return values are in the range [0, 255]. A return value of -1 signifies a decoding error.
+ */
+static int decode_one_huffman(const jpeg_huffman_table_t* htable, bit_dispenser_t* bd)
+{
+    // dc block decode
+    uint16_t huff_reg = 0;
+    int num_bits_shifted = 0;
+    uint16_t min_exempt_value = 0;
+    uint16_t cumsum = 0;
+    int huffman_decode = -1;
+
+    while ((num_bits_shifted < 16) && (huffman_decode == -1) && (!bit_dispenser_empty(bd))) {
+        // shift in new bit.
+        bit_dispenser_dispense_u16(&huff_reg, 1, bd);
+
+        // update tree tracking
+        min_exempt_value <<= 1;
+        min_exempt_value += htable->number_of_codes_with_length[num_bits_shifted];
+        cumsum += htable->number_of_codes_with_length[num_bits_shifted];
+
+        num_bits_shifted++;
+
+        // check
+        if (huff_reg < min_exempt_value) {
+            int dist_from_end = min_exempt_value - huff_reg;
+            huffman_decode = htable->huffman_codes[cumsum - dist_from_end];
+        }
+    }
+
+    return huffman_decode;
+}
+
+
+/**
  * NB: this assumes that components are in the same order in the scan as they are in the
  * frame header, which is probably true most of the time.
  */
@@ -477,66 +541,90 @@ huffman_decoded_jpeg_scan_t* jpeg_image_huffman_decode(const jpeg_image_t* jpeg)
     huffman_decoded_jpeg_scan_t* result = huffman_decoded_jpeg_scan_create(jpeg);
 
     //
-    int bitshift_bitmask = 0x80;
-    int bitshift_data_idx = 0;
+    bit_dispenser_t* bd = bit_dispenser_create(jpeg->scan.entropy_coded_segments[0]->data,
+                                               jpeg->scan.entropy_coded_segments[0]->size);
     uint16_t huff_reg = 0;
 
     int num_mcus = result->H_max * result->V_max;
     for (int i = 0; i < num_mcus; i++) {
+        printf("jpeg decoding trace:    decoding MCU %i.\n", i);
         for (int j = 0; j < jpeg->frame_header.num_components; j++) {
-            int blocks_per_mcu = (jpeg->frame_header.csps[i].horizontal_sampling_factor *
-                                  jpeg->frame_header.csps[i].vertical_sampling_factor);
+            printf("jpeg decoding trace:    decoding component %i of MCU %i.\n", j, i);
+            int blocks_per_mcu = (jpeg->frame_header.csps[j].horizontal_sampling_factor *
+                                  jpeg->frame_header.csps[j].vertical_sampling_factor);
             int block_idx      = blocks_per_mcu * i;
 
-            uint8_t* data = jpeg->scan.entropy_coded_segments[0]->data;
-
             // TODO find right value for '?'
-            // jpeg_huffman_table_t* huff_table = &(jpeg->dc_huffman_tables[?]);
-            const jpeg_huffman_table_t* huff_table = &(jpeg->dc_huffman_tables[0]);
+            uint8_t huff_tables = jpeg->scan.jpeg_scan_header.csps[j].dc_ac_entropy_coding_table;
+            int dc_huff_idx = (huff_tables >> 4) & 0x0f;
+            int ac_huff_idx = (huff_tables >> 0) & 0x0f;
+            const jpeg_huffman_table_t* dc_huff_table = &(jpeg->dc_huffman_tables[dc_huff_idx]);
+            const jpeg_huffman_table_t* ac_huff_table = &(jpeg->ac_huffman_tables[ac_huff_idx]);
 
             // huffman decode!
             for (int k = 0; k < blocks_per_mcu; k++) {
-                // dc block decode
-                huff_reg = 0;
-                int bits_shifted = 0;
-                uint16_t min_exempt_value = 0;
-                uint16_t cumsum = 0;
-                int dc_huffman_decode = -1;
+                printf("jpeg decoding trace:    decoding block %i of component %i of MCU %i.\n",
+                       k, j, i);
+                jpeg_block_t* target_block = &result->components[j].blocks[block_idx + k];
 
-                while ((bits_shifted < 16) && (dc_huffman_decode == -1)) {
-                    // shift in new bit.
-                    huff_reg <<= 1;
-                    if (data[bitshift_data_idx] & bitshift_bitmask) {
-                        huff_reg |= 0x01;
-                    }
-                    bitshift_bitmask >>= 1;
-                    if (bitshift_bitmask == 0) {
-                        bitshift_bitmask = 0x80;
-                    }
-
-                    // update tree tracking
-                    min_exempt_value <<= 1;
-                    min_exempt_value += huff_table->number_of_codes_with_length[bits_shifted];
-                    bits_shifted++;
-
-                    cumsum += huff_table->number_of_codes_with_length[bits_shifted];
-
-                    // check
-                    if (huff_reg < min_exempt_value) {
-                        int dist_from_end = min_exempt_value - huff_reg;
-                        dc_huffman_decode = huff_table->huffman_codes[cumsum - dist_from_end];
-                    }
-                }
-
-                if (dc_huffman_decode == -1) {
+                // DC value
+                int dc_raw_length = decode_one_huffman(dc_huff_table, bd);
+                if (dc_raw_length == -1) {
                     printf("jpeg decoding error:    error decoding DC huffman value.\n");
                     goto fail_cleanup;
                 }
 
-                //uint16_t foo;
+                // special EOB case
+                if (dc_raw_length == 0) {
+                    printf("jpeg decoding trace:    DC EOB reached.\n");
+                } else {
+                    printf("jpeg decoding trace:    Decoding %i bits for DC value.\n", dc_raw_length);
+                    uint16_t dc_raw_value = 0;
+                    bit_dispenser_dispense_u16(&dc_raw_value, dc_raw_length, bd);
+
+                    // TODO: DC differential decoding.
+                    target_block->dc_value = coded_value_to_coefficient_value(dc_raw_value,
+                                                                              dc_raw_length);
+                    printf("jpeg decoding trace:    Value %04x (length %i) decoded to %i.\n",
+                           dc_raw_value, dc_raw_length, target_block->dc_value);
+                }
 
                 // ac block decode
+                int ac_values_decoded = 0;
+                while (ac_values_decoded < 63) {
+                    // read in RRRRSSSS byte as described in section F.1.2.2.1 of T.81.
+                    int ac_huffman_decode = decode_one_huffman(ac_huff_table, bd);
+                    if (ac_huffman_decode == -1) {
+                        printf("jpeg decoding error:    error decoding AC huffman value.\n");
+                        goto fail_cleanup;
+                    }
+                    uint8_t rrrrssss = (uint8_t)ac_huffman_decode;
 
+                    // special EOB case
+                    if (rrrrssss == 0x00) {
+                        printf("jpeg decoding trace:    AC EOB reached.\n");
+                        break;
+                    }
+
+                    uint8_t zeros_before_next_coeff = (rrrrssss >> 4) & 0x0f;
+                    printf("jpeg decoding trace:    %i RLE'd zeros in AC table.\n",
+                           zeros_before_next_coeff);
+
+                    for (int i = 0; i < zeros_before_next_coeff; i++) {
+                        target_block->ac_values[ac_values_decoded] = 0;
+                        ac_values_decoded += 1;
+                    }
+
+                    // read next AC coefficient
+                    uint8_t ac_coefficient_len = (rrrrssss >> 0) & 0x0f;
+                    printf("jpeg decoding trace:    Decoding %i bits.\n", ac_coefficient_len);
+                    uint16_t ac_raw_value = 0;
+                    bit_dispenser_dispense_u16(&ac_raw_value, ac_coefficient_len, bd);
+                    int ac_val = coded_value_to_coefficient_value(ac_raw_value, ac_coefficient_len);
+                    target_block->ac_values[ac_values_decoded] = ac_val;
+                    printf("jpeg decoding trace:    Value %04x (length %i) decoded to %i.\n",
+                           ac_raw_value, ac_coefficient_len, ac_val);
+                }
             }
         }
     }
@@ -545,6 +633,7 @@ huffman_decoded_jpeg_scan_t* jpeg_image_huffman_decode(const jpeg_image_t* jpeg)
 
 fail_cleanup:
     huffman_decoded_jpeg_scan_destroy(result);
+    bit_dispenser_destroy(bd);
     return NULL;
 }
 
