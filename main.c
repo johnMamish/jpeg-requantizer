@@ -118,8 +118,14 @@ int main(int argc, char** argv)
         return -1;
     }
 
-    // FUTS ABOUT
-
+    // FUTZ ABOUT
+    for (int i = 0; i < 5700; i++) {
+        for (int j = 4; j < 63; j++) {
+            huffman_decoded_jpeg->components[0].blocks[i].ac_values[j] = 0;
+            huffman_decoded_jpeg->components[1].blocks[i/2].ac_values[j] = 0;
+            huffman_decoded_jpeg->components[2].blocks[i/2].ac_values[j] = 0;
+        }
+    }
 
 
     jpeg_image_t* recompress = jpeg_image_huffman_recode_with_tables(huffman_decoded_jpeg, jpeg);
