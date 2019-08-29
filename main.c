@@ -131,7 +131,7 @@ int main(int argc, char** argv)
         for (int component = 0; component < 3; component++) {
             const int MCUs_per_line   = ((jpeg->frame_header.csps[component].horizontal_sampling_factor *
                                           jpeg->frame_header.samples_per_line) /
-                                         huffman_decoded_jpeg->H_max);
+                                         redecompress->H_max);
 
             const int MCU_x = MCU % MCUs_per_line;
             const int MCU_y = MCU / MCUs_per_line;
@@ -141,7 +141,7 @@ int main(int argc, char** argv)
             const int block_idx = blocks_per_mcu * MCU;
             for (int block = 0; block < blocks_per_mcu; block++) {
                 printf("Component = %i, MCU = [%i,%i]\n", component, MCU_x, MCU_y);
-                print_block_unzigged(&huffman_decoded_jpeg->components[component].blocks[block_idx + block]);
+                print_block_unzigged(&redecompress->components[component].blocks[block_idx + block]);
                 printf("\n\n");
             }
         }

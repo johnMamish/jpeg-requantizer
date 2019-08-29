@@ -670,6 +670,7 @@ static uint16_t coefficient_value_to_coded_value(int16_t coefficient_value, int*
     // look into __builtin_ffs when the time comes.
     int min_less1 = 0;
     int max       = 1;
+    *bitlen = 1;
     int16_t coeff_abs = (coefficient_value < 0) ? (-coefficient_value) : (coefficient_value);
     for (; *bitlen < 13; (*bitlen)++) {
         if ((coeff_abs > min_less1) && (coeff_abs <= max)) {
@@ -685,7 +686,7 @@ static uint16_t coefficient_value_to_coded_value(int16_t coefficient_value, int*
     }
 
     if (coefficient_value < 0) {
-        result = coefficient_value + (1 << *bitlen) - 1;
+        result = coefficient_value + max;
     } else {
         result = coefficient_value;
     }
@@ -766,26 +767,27 @@ jpeg_image_t* jpeg_image_huffman_recode_with_tables(const huffman_decoded_jpeg_s
 
             // huffman encode!
             for (int k = 0; k < blocks_per_mcu; k++) {
-                printf("jpeg recoding trace:    recoding block %i of component %i of MCU %i.\n",
-                       k, j, i);
+                //printf("jpeg recoding trace:    recoding block %i of component %i of MCU %i.\n",
+                //k, j, i);
                 jpeg_block_t* source_block = &decoded_scan->components[j].blocks[block_idx + k];
 
                 // ======= DC length and DC coefficient =======
                 int dc_raw_length;
                 uint16_t coded_coefficient_value =
                     coefficient_value_to_coded_value(source_block->dc_value, &dc_raw_length);
-                printf("jpeg recoding trace:    Coding %i bits for DC value.\n", dc_raw_length);
+                //printf("jpeg recoding trace:    Coding %i bits for DC value %i.\n", dc_raw_length,
+                //source_block->dc_value);
 
                 if ((dc_raw_length < 0) || (dc_raw_length > 11)) {
-                    printf("jpeg recoding error:    Trying to pack dc coefficient with length of "
-                           "%i bits.\n", dc_raw_length);
+                    //printf("jpeg recoding error:    Trying to pack dc coefficient with length of "
+                    //"%i bits.\n", dc_raw_length);
                     return NULL;
                 }
 
                 const huffman_reverse_lookup_entry_t* huffman_code = &dc_hrlt->entries[dc_raw_length];
                 if (huffman_code->bit_length == 0) {
-                    printf("jpeg recoding error:    No huffman code found for %02x.\n",
-                           dc_raw_length);
+                    //printf("jpeg recoding error:    No huffman code found for %02x.\n",
+                    //dc_raw_length);
                     return NULL;
                 }
                 bit_packer_pack_u32(huffman_code->value, huffman_code->bit_length, bp);
@@ -799,13 +801,13 @@ jpeg_image_t* jpeg_image_huffman_recode_with_tables(const huffman_decoded_jpeg_s
                     unsigned int l;
                     for (l = ac_coeff_idx; (source_block->ac_values[l] == 0) && (l < 63); l++);
 
-                    int zeroes_to_rle = (l - 1) - ac_coeff_idx;
+                    int zeroes_to_rle = l - ac_coeff_idx;
 
                     if (l == 63) {
                         // we made it all the way to the end; slap an EOB in there.
                         const huffman_reverse_lookup_entry_t* huffman_code = &ac_hrlt->entries[0];
                         if (huffman_code->bit_length == 0) {
-                            printf("jpeg recoding error:    No huffman code found for %02x.\n", 0);
+                            //printf("jpeg recoding error:    No huffman code found for %02x.\n", 0);
                             return NULL;
                         }
                         bit_packer_pack_u32(huffman_code->value, huffman_code->bit_length, bp);
@@ -818,13 +820,13 @@ jpeg_image_t* jpeg_image_huffman_recode_with_tables(const huffman_decoded_jpeg_s
                                                              &ac_raw_length);
 
                         if ((ac_raw_length < 0) || (ac_raw_length > 10)) {
-                            printf("jpeg recoding error:    "
-                                   "Trying to pack ac coefficient with length of %i bits.\n",
-                                   ac_raw_length);
+                            //printf("jpeg recoding error:    "
+                            //"Trying to pack ac coefficient with length of %i bits.\n",
+                            //ac_raw_length);
                             return NULL;
                         }
-                        printf("jpeg recoding trace:    Coding %i bits for AC value.\n",
-                               ac_raw_length);
+                        //printf("jpeg recoding trace:    Coding %i bits for AC value.\n",
+                        //ac_raw_length);
 
                         uint8_t rrrrssss = ((uint8_t)zeroes_to_rle << 4) | (ac_raw_length);
                         const huffman_reverse_lookup_entry_t* huffman_code =
@@ -852,6 +854,7 @@ jpeg_image_t* jpeg_image_huffman_recode_with_tables(const huffman_decoded_jpeg_s
 
                     ac_coeff_idx = l + 1;
                 }
+                //printf("jpeg recoding trace:    ========================================\n");
             }
         }
     }
