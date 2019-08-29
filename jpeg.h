@@ -8,6 +8,7 @@
 #ifndef MAMISH_JPEG_H
 #define MAMISH_JPEG_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 ////////////////////////////////////////////////////////////////
@@ -64,6 +65,9 @@ typedef struct jpeg_huffman_table
 typedef struct jpeg_quantization_table
 {
     // this structure doesn't have a header, as one header can hold several quantization tables.
+
+    // table valid marker for my own use.
+    bool table_valid;
 
     // pq_tq<7:4> specify the bit-depth of samples. 0 for 8-bit, 1 for 16-bit.
     // pq_tq<3:0> specify the quantization table destination identifier.
@@ -176,6 +180,15 @@ typedef struct huffman_decoded_jpeg_scan
  * If there's an error while loading the file, returns NULL.
  */
 jpeg_image_t* jpeg_image_load_from_file(const char* file);
+
+/**
+ * Writes the given jpeg image to a file, first inserting all of the miscallenous segments, then
+ * quantization tables, then huffman tables, then SOF, then SOS.
+ * Note that if the file aleady exists, this function will overwrite it.
+ *
+ * The 0xff's in the entropy coded segment will be stuffed with 0x00 bytes.
+ */
+int jpeg_image_store_to_file(const char* filepath, const jpeg_image_t* jpeg);
 
 jpeg_image_t* jpeg_image_copy(const jpeg_image_t* jpeg);
 

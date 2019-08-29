@@ -118,6 +118,10 @@ int main(int argc, char** argv)
         return -1;
     }
 
+    // FUTS ABOUT
+
+
+
     jpeg_image_t* recompress = jpeg_image_huffman_recode_with_tables(huffman_decoded_jpeg, jpeg);
     huffman_decoded_jpeg_scan_t* redecompress = jpeg_image_huffman_decode(recompress);
 
@@ -146,6 +150,8 @@ int main(int argc, char** argv)
             }
         }
     }
+
+    jpeg_image_store_to_file("out.jpg", recompress);
 
     // clean up
     jpeg_image_destroy(jpeg);
