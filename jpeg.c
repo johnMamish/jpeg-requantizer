@@ -84,38 +84,6 @@ static int marker_is_SOF_marker(uint8_t marker)
             ((marker >= SOF_13) && (marker <= SOF_15)));
 }
 
-static int marker_is_APP_marker(uint8_t marker)
-{
-    return ((marker >= APP_0) && (marker <= APP_15));
-}
-
-static int marker_is_JPG_marker(uint8_t marker)
-{
-    return ((marker >= JPG_0) && (marker <= JPG_13));
-}
-
-/**
- * Returns 1 if the given marker denotes any jpeg segment other than a frame or scan segment.
- * These segments must be treated differently as they can contain other segments.
- */
-static int marker_is_miscellaneous_marker(uint8_t marker)
-{
-    return (marker_is_SOF_marker(marker) ||
-            marker_is_APP_marker(marker) ||
-            marker_is_JPG_marker(marker) ||
-            (marker == DHT)           ||
-            (marker == JPG_EXT)       ||
-            (marker == DAC)           ||
-            (marker == SOI)           ||
-            (marker == EOI)           ||
-            (marker == DQT)           ||
-            (marker == DNL)           ||
-            (marker == DRI)           ||
-            (marker == DHP)           ||
-            (marker == EXP)           ||
-            (marker == COM));
-}
-
 /**
  *
  */
@@ -535,8 +503,6 @@ static int16_t coded_value_to_coefficient_value(uint16_t coded_value, int bitlen
     return result;
 }
 
-
-
 /**
  * Valid return values are in the range [0, 255]. A return value of -1 signifies a decoding error.
  */
@@ -591,17 +557,16 @@ huffman_decoded_jpeg_scan_t* jpeg_image_huffman_decode(const jpeg_image_t* jpeg)
             num_mcus = result->components[i].num_blocks;
         }
     }
-    printf("jpeg decoding trace:    %i MCUs in image.\n", num_mcus);
+    //printf("jpeg decoding trace:    %i MCUs in image.\n", num_mcus);
 
     for (int i = 0; i < num_mcus; i++) {
-        printf("jpeg decoding trace:    decoding MCU %i.\n", i);
+        //printf("jpeg decoding trace:    decoding MCU %i.\n", i);
         for (int j = 0; j < jpeg->frame_header.num_components; j++) {
-            printf("jpeg decoding trace:    decoding component %i of MCU %i.\n", j, i);
+            //printf("jpeg decoding trace:    decoding component %i of MCU %i.\n", j, i);
             int blocks_per_mcu = (jpeg->frame_header.csps[j].horizontal_sampling_factor *
                                   jpeg->frame_header.csps[j].vertical_sampling_factor);
             int block_idx      = blocks_per_mcu * i;
 
-            // TODO find right value for '?'
             uint8_t huff_tables = jpeg->scan.jpeg_scan_header.csps[j].dc_ac_entropy_coding_table;
             int dc_huff_idx = (huff_tables >> 4) & 0x0f;
             int ac_huff_idx = (huff_tables >> 0) & 0x0f;
@@ -610,30 +575,30 @@ huffman_decoded_jpeg_scan_t* jpeg_image_huffman_decode(const jpeg_image_t* jpeg)
 
             // huffman decode!
             for (int k = 0; k < blocks_per_mcu; k++) {
-                printf("jpeg decoding trace:    decoding block %i of component %i of MCU %i.\n",
-                       k, j, i);
+                //printf("jpeg decoding trace:    decoding block %i of component %i of MCU %i.\n",
+                //k, j, i);
                 jpeg_block_t* target_block = &result->components[j].blocks[block_idx + k];
 
                 // DC value
                 int dc_raw_length = decode_one_huffman(dc_huff_table, bd);
                 if (dc_raw_length == -1) {
-                    printf("jpeg decoding error:    error decoding DC huffman value.\n");
+                    //printf("jpeg decoding error:    error decoding DC huffman value.\n");
                     goto fail_cleanup;
                 }
 
                 // special EOB case
                 if (dc_raw_length == 0) {
-                    printf("jpeg decoding trace:    DC EOB reached.\n");
+                    //printf("jpeg decoding trace:    DC EOB reached.\n");
                 } else {
-                    printf("jpeg decoding trace:    Decoding %i bits for DC value.\n", dc_raw_length);
+                    //printf("jpeg decoding trace:    Decoding %i bits for DC value.\n", dc_raw_length);
                     uint16_t dc_raw_value = 0;
                     bit_dispenser_dispense_u16(&dc_raw_value, dc_raw_length, bd);
 
                     // TODO: DC differential decoding.
                     target_block->dc_value = coded_value_to_coefficient_value(dc_raw_value,
                                                                               dc_raw_length);
-                    printf("jpeg decoding trace:    Value %04x (length %i) decoded to %i.\n",
-                           dc_raw_value, dc_raw_length, target_block->dc_value);
+                    //printf("jpeg decoding trace:    Value %04x (length %i) decoded to %i.\n",
+                    //dc_raw_value, dc_raw_length, target_block->dc_value);
                 }
 
                 // ac block decode
@@ -646,17 +611,17 @@ huffman_decoded_jpeg_scan_t* jpeg_image_huffman_decode(const jpeg_image_t* jpeg)
                         goto fail_cleanup;
                     }
                     uint8_t rrrrssss = (uint8_t)ac_huffman_decode;
-                    printf("jpeg decoding trace:    rrrrssss = %02x.\n", rrrrssss);
+                    //printf("jpeg decoding trace:    rrrrssss = %02x.\n", rrrrssss);
 
                     // special EOB case
                     if (rrrrssss == 0x00) {
-                        printf("jpeg decoding trace:    AC EOB reached.\n");
+                        //printf("jpeg decoding trace:    AC EOB reached.\n");
                         break;
                     }
 
                     uint8_t zeros_before_next_coeff = (rrrrssss >> 4) & 0x0f;
-                    printf("jpeg decoding trace:    %i RLE'd zeros in AC table.\n",
-                           zeros_before_next_coeff);
+                    //printf("jpeg decoding trace:    %i RLE'd zeros in AC table.\n",
+                    //zeros_before_next_coeff);
 
                     for (int i = 0; i < zeros_before_next_coeff; i++) {
                         target_block->ac_values[ac_values_decoded] = 0;
@@ -665,16 +630,16 @@ huffman_decoded_jpeg_scan_t* jpeg_image_huffman_decode(const jpeg_image_t* jpeg)
 
                     // read next AC coefficient
                     uint8_t ac_coefficient_len = (rrrrssss >> 0) & 0x0f;
-                    printf("jpeg decoding trace:    Decoding %i bits.\n", ac_coefficient_len);
+                    //printf("jpeg decoding trace:    Decoding %i bits.\n", ac_coefficient_len);
                     uint16_t ac_raw_value = 0;
                     bit_dispenser_dispense_u16(&ac_raw_value, ac_coefficient_len, bd);
                     int ac_val = coded_value_to_coefficient_value(ac_raw_value, ac_coefficient_len);
                     target_block->ac_values[ac_values_decoded] = ac_val;
-                    printf("jpeg decoding trace:    Value %04x (length %i) decoded to %i.\n",
-                           ac_raw_value, ac_coefficient_len, ac_val);
+                    //printf("jpeg decoding trace:    Value %04x (length %i) decoded to %i.\n",
+                    //ac_raw_value, ac_coefficient_len, ac_val);
                     ac_values_decoded += 1;
                 }
-                printf("jpeg decoding trace:    ========================================\n");
+                //printf("jpeg decoding trace:    ========================================\n");
             }
         }
     }
@@ -687,12 +652,225 @@ fail_cleanup:
     return NULL;
 }
 
+/**
+ * The values coded into the file need to be converted as described in tables F.1 and F.2 of T.81.
+ *
+ * @param[in]     coefficient_value
+ * @param[out]    bitlen              Bitlength of the returned coded value. Should be in [0, 11]
+ */
+static uint16_t coefficient_value_to_coded_value(int16_t coefficient_value, int* bitlen)
+{
+    uint16_t result = 0;
+    if (coefficient_value == 0) {
+        *bitlen = 0;
+        return 0;
+    }
+
+    // there's definately a faster way to do this, but I didn't want to prematurely optimize.
+    // look into __builtin_ffs when the time comes.
+    int min_less1 = 0;
+    int max       = 1;
+    int16_t coeff_abs = (coefficient_value < 0) ? (-coefficient_value) : (coefficient_value);
+    for (; *bitlen < 13; (*bitlen)++) {
+        if ((coeff_abs > min_less1) && (coeff_abs <= max)) {
+            break;
+        }
+        min_less1 = max;
+        max <<= 1;
+        max |= 1;
+    }
+
+    if (*bitlen == 13) {
+        return 0;
+    }
+
+    if (coefficient_value < 0) {
+        result = coefficient_value + (1 << *bitlen) - 1;
+    } else {
+        result = coefficient_value;
+    }
+
+    return result;
+}
+
+typedef struct huffman_reverse_lookup_entry
+{
+    // bit length of 0 means that there is no entry for that value.
+    int bit_length;
+    uint32_t value;
+} huffman_reverse_lookup_entry_t;
+
+typedef struct huffman_reverse_lookup_table
+{
+    huffman_reverse_lookup_entry_t entries[256];
+} huffman_reverse_lookup_table_t;
+
+/**
+ * The huffman table returned by this function can be safely destroyed with free().
+ */
+huffman_reverse_lookup_table_t* huffman_reverse_lookup_table_create(const jpeg_huffman_table_t* t)
+{
+    huffman_reverse_lookup_table_t* hrlt = calloc(1, sizeof(huffman_reverse_lookup_table_t));
+
+    uint32_t codedval = 0;
+    int entryidx = 0;
+    for (int bits = 0; bits < 16; bits++) {
+        codedval <<= 1;
+        for (int i = 0; i < t->number_of_codes_with_length[bits]; i++, entryidx++) {
+            uint8_t uncodedval = t->huffman_codes[entryidx];
+
+            hrlt->entries[uncodedval].bit_length = bits + 1;
+            hrlt->entries[uncodedval].value = codedval;
+            codedval++;
+        }
+    }
+
+    return hrlt;
+}
+
 jpeg_image_t* jpeg_image_huffman_recode_with_tables(const huffman_decoded_jpeg_scan_t* decoded_scan,
                                                     const jpeg_image_t* jpeg)
 {
     jpeg_image_t* result = jpeg_image_copy(jpeg);
 
+    // make huffman reverse lookup tables.
+    huffman_reverse_lookup_table_t* dc_hrlts[4];
+    huffman_reverse_lookup_table_t* ac_hrlts[4];
+    for (int i = 0; i < 4; i++) {
+        dc_hrlts[i] = huffman_reverse_lookup_table_create(&jpeg->dc_huffman_tables[i]);
+        ac_hrlts[i] = huffman_reverse_lookup_table_create(&jpeg->ac_huffman_tables[i]);
+    }
 
+    // huffman code
+    // num of MCUs is the min of the number of blocks
+    int num_mcus = decoded_scan->components[0].num_blocks;
+    for (int i = 1; i < jpeg->frame_header.num_components; i++) {
+        if (decoded_scan->components[i].num_blocks < num_mcus) {
+            num_mcus = decoded_scan->components[i].num_blocks;
+        }
+    }
+
+    bit_packer_t* bp = bit_packer_create();
+
+    for (int i = 0; i < num_mcus; i++) {
+        for (int j = 0; j < jpeg->frame_header.num_components; j++) {
+            int blocks_per_mcu = (jpeg->frame_header.csps[j].horizontal_sampling_factor *
+                                  jpeg->frame_header.csps[j].vertical_sampling_factor);
+            int block_idx      = blocks_per_mcu * i;
+
+            uint8_t huff_tables = jpeg->scan.jpeg_scan_header.csps[j].dc_ac_entropy_coding_table;
+            int dc_huff_idx = (huff_tables >> 4) & 0x0f;
+            int ac_huff_idx = (huff_tables >> 0) & 0x0f;
+            const huffman_reverse_lookup_table_t* dc_hrlt = (dc_hrlts[dc_huff_idx]);
+            const huffman_reverse_lookup_table_t* ac_hrlt = (ac_hrlts[ac_huff_idx]);
+
+            // huffman encode!
+            for (int k = 0; k < blocks_per_mcu; k++) {
+                printf("jpeg recoding trace:    recoding block %i of component %i of MCU %i.\n",
+                       k, j, i);
+                jpeg_block_t* source_block = &decoded_scan->components[j].blocks[block_idx + k];
+
+                // ======= DC length and DC coefficient =======
+                int dc_raw_length;
+                uint16_t coded_coefficient_value =
+                    coefficient_value_to_coded_value(source_block->dc_value, &dc_raw_length);
+                printf("jpeg recoding trace:    Coding %i bits for DC value.\n", dc_raw_length);
+
+                if ((dc_raw_length < 0) || (dc_raw_length > 11)) {
+                    printf("jpeg recoding error:    Trying to pack dc coefficient with length of "
+                           "%i bits.\n", dc_raw_length);
+                    return NULL;
+                }
+
+                const huffman_reverse_lookup_entry_t* huffman_code = &dc_hrlt->entries[dc_raw_length];
+                if (huffman_code->bit_length == 0) {
+                    printf("jpeg recoding error:    No huffman code found for %02x.\n",
+                           dc_raw_length);
+                    return NULL;
+                }
+                bit_packer_pack_u32(huffman_code->value, huffman_code->bit_length, bp);
+                bit_packer_pack_u16(coded_coefficient_value, dc_raw_length, bp);
+
+                // ======= AC coefficients =======
+                unsigned int ac_coeff_idx = 0;
+
+                while (ac_coeff_idx < 63) {
+                    // find next non-zero coefficient
+                    unsigned int l;
+                    for (l = ac_coeff_idx; (source_block->ac_values[l] == 0) && (l < 63); l++);
+
+                    int zeroes_to_rle = (l - 1) - ac_coeff_idx;
+
+                    if (l == 63) {
+                        // we made it all the way to the end; slap an EOB in there.
+                        const huffman_reverse_lookup_entry_t* huffman_code = &ac_hrlt->entries[0];
+                        if (huffman_code->bit_length == 0) {
+                            printf("jpeg recoding error:    No huffman code found for %02x.\n", 0);
+                            return NULL;
+                        }
+                        bit_packer_pack_u32(huffman_code->value, huffman_code->bit_length, bp);
+                    } else if ((zeroes_to_rle >= 0) && (zeroes_to_rle < 16)) {
+                        // pack AC coefficient normally
+                        int cidx = ac_coeff_idx + zeroes_to_rle;
+                        int ac_raw_length;
+                        uint16_t coded_coefficient_value =
+                            coefficient_value_to_coded_value(source_block->ac_values[cidx],
+                                                             &ac_raw_length);
+
+                        if ((ac_raw_length < 0) || (ac_raw_length > 10)) {
+                            printf("jpeg recoding error:    "
+                                   "Trying to pack ac coefficient with length of %i bits.\n",
+                                   ac_raw_length);
+                            return NULL;
+                        }
+                        printf("jpeg recoding trace:    Coding %i bits for AC value.\n",
+                               ac_raw_length);
+
+                        uint8_t rrrrssss = ((uint8_t)zeroes_to_rle << 4) | (ac_raw_length);
+                        const huffman_reverse_lookup_entry_t* huffman_code =
+                            &ac_hrlt->entries[rrrrssss];
+                        if (huffman_code->bit_length == 0) {
+                            printf("jpeg recoding error:    No huffman code found for %02x.\n", 0);
+                            return NULL;
+                        }
+                        bit_packer_pack_u32(huffman_code->value, huffman_code->bit_length, bp);
+                        bit_packer_pack_u16(coded_coefficient_value, ac_raw_length, bp);
+                    } else {
+                        // if there are 17 or more zeroes that need to be RLE'd before another
+                        // coefficient is reached, we may only pack only 16 of them.
+                        uint8_t rrrrssss = 0xf0;
+                        const huffman_reverse_lookup_entry_t* huffman_code =
+                            &ac_hrlt->entries[rrrrssss];
+                        if (huffman_code->bit_length == 0) {
+                            printf("jpeg recoding error:    No huffman code found for %02x.\n", 0);
+                            return NULL;
+                        }
+                        bit_packer_pack_u32(huffman_code->value, huffman_code->bit_length, bp);
+
+                        l = ac_coeff_idx + 15;
+                    }
+
+                    ac_coeff_idx = l + 1;
+                }
+            }
+        }
+    }
+
+    bit_packer_fill_endbits(bp);
+
+    entropy_coded_segment_t* target_ecs = result->scan.entropy_coded_segments[0];
+    target_ecs->size = bp->curidx;
+    target_ecs->data = malloc(target_ecs->size);
+    memcpy(target_ecs->data, bp->data, target_ecs->size);
+
+    bit_packer_destroy(bp);
+
+    for (int i = 0; i < 4; i++) {
+        free(dc_hrlts[i]);
+        free(ac_hrlts[i]);
+    }
+
+    return result;
 }
 
 void jpeg_image_destroy(jpeg_image_t* jpeg)

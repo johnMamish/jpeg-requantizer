@@ -118,6 +118,14 @@ int main(int argc, char** argv)
         return -1;
     }
 
+    jpeg_image_t* recompress = jpeg_image_huffman_recode_with_tables(huffman_decoded_jpeg, jpeg);
+    huffman_decoded_jpeg_scan_t* redecompress = jpeg_image_huffman_decode(recompress);
+
+    if (redecompress == NULL) {
+        printf("error during huffman redcompression\n");
+        return -1;
+    }
+
     // print
     for (int MCU = 0; MCU < 10; MCU++) {
         for (int component = 0; component < 3; component++) {
